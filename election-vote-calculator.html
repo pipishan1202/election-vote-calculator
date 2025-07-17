@@ -96,7 +96,7 @@
             </thead>
             <tbody>
               <tr>
-                <td className="border border-gray-400 p-2">（G）投票權人數，手動輸入</td>
+                <td className="border border-gray-400 p-2">（G）投票權人數，手動輸入1</td>
                 {data.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">
                     <input
@@ -109,7 +109,7 @@
                 ))}
               </tr>
               <tr>
-                <td className="border border-gray-400 p-2">（F）用餘票數，手動輸入</td>
+                <td className="border border-gray-400 p-2">（F）用餘票數，手動輸入2</td>
                 {data.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">
                     <input
@@ -148,7 +148,7 @@
                 ))}
               </tr>
               <tr>
-                <td className="border border-gray-400 p-2">（A1）同意票數，手動輸入</td>
+                <td className="border border-gray-400 p-2">（A1）同意票數，手動輸入3</td>
                 {data.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">
                     <input
@@ -161,7 +161,7 @@
                 ))}
               </tr>
               <tr>
-                <td className="border border-gray-400 p-2">（A2）不同意票數，手動輸入</td>
+                <td className="border border-gray-400 p-2">（A2）不同意票數，手動輸入4</td>
                 {data.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">
                     <input
@@ -174,7 +174,7 @@
                 ))}
               </tr>
               <tr>
-                <td className="border border-gray-400 p-2">（B）無效票，手動輸入</td>
+                <td className="border border-gray-400 p-2">（B）無效票，手動輸入5</td>
                 {data.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">
                     <input
@@ -187,7 +187,7 @@
                 ))}
               </tr>
               <tr>
-                <td className="border border-gray-400 p-2">（C）總投票數（A+B），自動計算</td>
+                <td className="border border-gray-400 p-2">（C）總投票數（A1+A2+B），自動計算</td>
                 {calculatedData.map((item, index) => (
                   <td key={index} className="border border-gray-400 p-2">{item.C}</td>
                 ))}
