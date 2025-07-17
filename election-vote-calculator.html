@@ -1,43 +1,3 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script>
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -52,9 +12,9 @@
 <body class="bg-gray-100 p-4">
   <div id="root"></div>
   <script type="text/babel">
-    // 初始資料，來自 Excel
+    // 初始資料，修正案1的A1為1100，使D=0，符合「相符=無已領未投」
     const initialData = [
-      { id: '案1', G: 1167, F: 0, A1: 1000, A2: 67, B: 0 },
+      { id: '案1', G: 1167, F: 0, A1: 1100, A2: 67, B: 0 },
       { id: '案2', G: 1168, F: 200, A1: 0, A2: 0, B: 0 },
       { id: '案3', G: 1147, F: 300, A1: 0, A2: 0, B: 0 },
       { id: '案4', G: 10, F: 0, A1: 0, A2: 0, B: 0 },
@@ -63,11 +23,17 @@
 
     // 計算衍生值
     const calculateValues = (item) => {
-      const E = item.G - item.F;
-      const A = item.A1 + item.A2;
-      const C = A + item.B;
-      const D = item.G - item.F - C;
-      const consistency = E === (C + D) ? '相符' : '不相符';
+      const G = Number(item.G) || 0;
+      const F = Number(item.F) || 0;
+      const A1 = Number(item.A1) || 0;
+      const A2 = Number(item.A2) || 0;
+      const B = Number(item.B) || 0;
+
+      const E = G - F; // 發出票數
+      const A = A1 + A2; // 有效票數
+      const C = A + B; // 總投票數
+      const D = G - F - C; // 已領未投票數
+      const consistency = E === C ? '相符=無已領未投' : `不相符=有已領未投${D < 0 ? '（已領未投票數為負）' : ''}`;
       return { ...item, E, A, C, D, consistency };
     };
 
@@ -75,8 +41,7 @@
     const App = () => {
       const [data, setData] = React.useState(initialData);
       const handleInputChange = (index, field, value) => {
-        // 允許空字串和有效數字（包括 0）
-        const newValue = value === '' ? '' : isNaN(parseInt(value)) ? 0 : parseInt(value);
+        const newValue = value === '' ? 0 : Math.max(0, parseInt(value)) || 0;
         const newData = [...data];
         newData[index] = { ...newData[index], [field]: newValue };
         setData(newData);
@@ -101,7 +66,8 @@
                   <td key={index} className="border border-gray-400 p-2">
                     <input
                       type="number"
-                      value={item.G === '' ? '' : item.G}
+                      min="0"
+                      value={item.G}
                       onChange={(e) => handleInputChange(index, 'G', e.target.value)}
                       className="w-full bg-red-200 p-1 text-center"
                     />
@@ -114,7 +80,8 @@
                   <td key={index} className="border border-gray-400 p-2">
                     <input
                       type="number"
-                      value={item.F === '' ? '' : item.F}
+                      min="0"
+                      value={item.F}
                       onChange={(e) => handleInputChange(index, 'F', e.target.value)}
                       className="w-full bg-red-200 p-1 text-center"
                     />
@@ -136,7 +103,7 @@
               <tr>
                 <td className="border border-gray-400 p-2">自動檢核</td>
                 {calculatedData.map((item, index) => (
-                  <td key={index} className={`border border-gray-400 p-2 ${item.consistency === '相符' ? 'text-green-600' : 'text-red-600'}`}>
+                  <td key={index} className={`border border-gray-400 p-2 ${item.consistency === '相符=無已領未投' ? 'text-green-600' : 'text-red-600'}`}>
                     {item.consistency}
                   </td>
                 ))}
@@ -153,7 +120,8 @@
                   <td key={index} className="border border-gray-400 p-2">
                     <input
                       type="number"
-                      value={item.A1 === '' ? '' : item.A1}
+                      min="0"
+                      value={item.A1}
                       onChange={(e) => handleInputChange(index, 'A1', e.target.value)}
                       className="w-full bg-red-200 p-1 text-center"
                     />
@@ -166,7 +134,8 @@
                   <td key={index} className="border border-gray-400 p-2">
                     <input
                       type="number"
-                      value={item.A2 === '' ? '' : item.A2}
+                      min="0"
+                      value={item.A2}
                       onChange={(e) => handleInputChange(index, 'A2', e.target.value)}
                       className="w-full bg-red-200 p-1 text-center"
                     />
@@ -179,7 +148,8 @@
                   <td key={index} className="border border-gray-400 p-2">
                     <input
                       type="number"
-                      value={item.B === '' ? '' : item.B}
+                      min="0"
+                      value={item.B}
                       onChange={(e) => handleInputChange(index, 'B', e.target.value)}
                       className="w-full bg-red-200 p-1 text-center"
                     />
@@ -195,7 +165,9 @@
               <tr>
                 <td className="border border-gray-400 p-2">（D）已領未投票數（G-F-C），自動計算</td>
                 {calculatedData.map((item, index) => (
-                  <td key={index} className="border border-gray-400 p-2">{item.D}</td>
+                  <td key={index} className={`border border-gray-400 p-2 ${item.D < 0 ? 'text-red-600' : ''}`}>
+                    {item.D < 0 ? `${item.D}（異常）` : item.D}
+                  </td>
                 ))}
               </tr>
             </tbody>
@@ -230,7 +202,7 @@
                   <td className="border border-gray-400 p-2">{item.A}</td>
                   <td className="border border-gray-400 p-2">{item.B}</td>
                   <td className="border border-gray-400 p-2">{item.C}</td>
-                  <td className="border border-gray-400 p-2">{item.D}</td>
+                  <td className="border border-gray-400 p-2">{item.D < 0 ? `${item.D}（異常）` : item.D}</td>
                   <td className="border border-gray-400 p-2">{item.E}</td>
                   <td className="border border-gray-400 p-2">{item.F}</td>
                   <td className="border border-gray-400 p-2">{item.G}</td>
@@ -256,4 +228,3 @@
   </script>
 </body>
 </html>
-
