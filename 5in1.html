@@ -1,0 +1,331 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2024 選舉投票計算</title>
+  <!-- 主 CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 備援 CDN -->
+  <script>
+    window.addEventListener('error', function(event) {
+      if (event.target.tagName === 'SCRIPT') {
+        console.error('CDN 載入失敗:', event.target.src);
+        const fallbackCDNs = {
+          'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js':
+            'https://unpkg.com/react@18.2.0/umd/react.production.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js':
+            'https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js':
+            'https://unpkg.com/@babel/standalone@7.23.2/babel.min.js'
+        };
+        const fallbackSrc = fallbackCDNs[event.target.src];
+        if (fallbackSrc) {
+          const script = document.createElement('script');
+          script.src = fallbackSrc;
+          document.head.appendChild(script);
+          console.log('載入備援 CDN:', fallbackSrc);
+        }
+      }
+    }, true);
+  </script>
+</head>
+<body class="bg-gray-100 p-4">
+  <div id="root"></div>
+  <div id="error" style="color: red; display: none;">
+    網頁載入失敗，請檢查網路連線或按 F12 查看控制台錯誤訊息。
+  </div>
+  <script type="text/babel">
+    // 初始資料，根據 Excel 設定，候選人數量統一為 18
+    const initialData = [
+      {
+        id: '縣市長',
+        G: 1167,
+        F: 294,
+        candidates: [296, 251, 319, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        B: 7
+      },
+      {
+        id: '鎮長',
+        G: 1147,
+        F: 284,
+        candidates: [373, 39, 426, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        B: 25
+      },
+      {
+        id: '村里長',
+        G: 9,
+        F: 3,
+        candidates: [0, 2, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        B: 1
+      },
+      {
+        id: '代表',
+        G: 10,
+        F: 7,
+        candidates: [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
+        B: 0
+      },
+      {
+        id: '議員',
+        G: 1168,
+        F: 295,
+        candidates: [7, 9, 1, 3, 1, 229, 3, 21, 328, 1, 0, 242, 0, 6, 1, 1, 0, 0],
+        B: 20
+      }
+    ];
+
+    // 計算衍生值
+    const calculateValues = (item) => {
+      const G = Number(item.G) || 0;
+      const F = Number(item.F) || 0;
+      const B = Number(item.B) || 0;
+      const candidates = item.candidates.map(c => Number(c) || 0);
+
+      const A = candidates.reduce((sum, c) => sum + c, 0); // 有效票數
+      const C = A + B; // 總投票數
+      const E = G - F; // 發出票數
+      const D = G - F - C; // 已領未投票數
+      const consistency = E === C ? '相符=無已領未投' : '不相符=有已領未投';
+      return { ...item, A, C, D, E, consistency };
+    };
+
+    // 主 React 組件
+    const App = () => {
+      const [data, setData] = React.useState(initialData);
+
+      const handleInputChange = (index, field, value, candidateIndex = null) => {
+        const newValue = value === '' ? 0 : Math.max(0, parseInt(value)) || 0;
+        const newData = [...data];
+        if (candidateIndex !== null) {
+          newData[index].candidates[candidateIndex] = newValue;
+        } else {
+          newData[index] = { ...newData[index], [field]: newValue };
+        }
+        setData(newData);
+      };
+
+      const renderTopTable = () => {
+        const calculatedData = data.map(calculateValues);
+        const maxCandidates = 18; // 固定為 18
+        return (
+          <div className="overflow-x-auto">
+            <table className="table-auto w-full mb-8 border-collapse border border-gray-400">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="border border-gray-400 p-2 w-40 sm:w-32">項目</th>
+                  {data.map((item, index) => (
+                    <th key={index} className="border border-gray-400 p-2 w-16 sm:w-12">{item.id}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2 font-bold">手動輸入順序[1]，投票權人數(G)</td>
+                  {data.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.G}
+                        onChange={(e) => handleInputChange(index, 'G', e.target.value)}
+                        className="w-full min-w-[60px] bg-red-200 px-1 text-sm text-center"
+                      />
+                    </td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2 font-bold">手動輸入順序[2]，用餘票數(F)</td>
+                  {data.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.F}
+                        onChange={(e) => handleInputChange(index, 'F', e.target.value)}
+                        className="w-full min-w-[60px] bg-red-200 px-1 text-sm text-center"
+                      />
+                    </td>
+                  ))}
+                </tr>
+                {Array(maxCandidates).fill().map((_, candidateIndex) => (
+                  <tr key={candidateIndex} className="hover:bg-gray-200">
+                    <td className="border border-gray-400 p-2 font-bold">手動輸入順序[{3 + candidateIndex}]，候選人 {candidateIndex + 1} 票數</td>
+                    {data.map((item, index) => (
+                      <td key={index} className="border border-gray-400 p-2">
+                        {candidateIndex < item.candidates.length ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={item.candidates[candidateIndex]}
+                            onChange={(e) => handleInputChange(index, 'candidates', e.target.value, candidateIndex)}
+                            className={`w-full min-w-[60px] ${candidateIndex % 2 === 0 ? 'bg-green-100' : 'bg-green-200'} px-1 text-sm text-center`}
+                          />
+                        ) : (
+                          '-'
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2 font-bold">手動輸入順序[{3 + maxCandidates}]，無效票(B)</td>
+                  {data.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2">
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.B}
+                        onChange={(e) => handleInputChange(index, 'B', e.target.value)}
+                        className="w-full min-w-[60px] bg-red-200 px-1 text-sm text-center"
+                      />
+                    </td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2">（A）有效票數，自動計算</td>
+                  {calculatedData.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2 text-sm">{item.A}</td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2">（C）總投票數（A+B），自動計算</td>
+                  {calculatedData.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2 text-sm">{item.C}</td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2">（D）已領未投票數（G-F-C），自動計算</td>
+                  {calculatedData.map((item, index) => (
+                    <td key={index} className={`border border-gray-400 p-2 text-sm ${item.D < 0 ? 'text-red-600' : ''}`}>
+                      {item.D < 0 ? `${item.D}（異常）` : item.D}
+                    </td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2">（E）發出票數（G-F），自動計算</td>
+                  {calculatedData.map((item, index) => (
+                    <td key={index} className="border border-gray-400 p-2 text-sm">{item.E}</td>
+                  ))}
+                </tr>
+                <tr className="hover:bg-gray-200">
+                  <td className="border border-gray-400 p-2">自動檢核</td>
+                  {calculatedData.map((item, index) => (
+                    <td key={index} className={`border border-gray-400 p-2 text-sm ${item.consistency === '相符=無已領未投' ? 'text-green-600' : 'text-red-600'}`}>
+                      {item.consistency}
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      };
+
+      const renderBottomTable = () => {
+        const calculatedData = data.map(calculateValues);
+        const maxCandidates = 18; // 固定為 18
+        return (
+          <div className="overflow-x-auto">
+            <table className="table-auto w-full border-collapse border border-gray-400">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="border border-gray-400 p-2 w-24 sm:w-20">類型</th>
+                  {Array(maxCandidates).fill().map((_, i) => (
+                    <th key={i} className="border border-gray-400 p-2 w-16 sm:w-12">候選人 {i + 1}</th>
+                  ))}
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">有效票 A</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">無效票 B</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">投票數 C</th>
+                  <th className="border border-gray-400 p-2 w-24 sm:w-20">檢核</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">領未投 D</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">發出票數 E</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">用餘票數 F</th>
+                  <th className="border border-gray-400 p-2 w-16 sm:w-12">選舉人數 G</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calculatedData.map((item, index) => (
+                  <tr key={index}>
+                    <td className="border border-gray-400 p-2 text-sm">{item.id}</td>
+                    {item.candidates.map((vote, i) => (
+                      <td key={i} className="border border-gray-400 p-2 text-sm">{vote}</td>
+                    ))}
+                    <td className="border border-gray-400 p-2 text-sm">{item.A}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.B}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.C}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.consistency}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.D < 0 ? `${item.D}（異常）` : item.D}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.E}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.F}</td>
+                    <td className="border border-gray-400 p-2 text-sm">{item.G}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      };
+
+      return (
+        <div>
+          <h1 className="text-2xl font-bold mb-4 text-center">2024 選舉投票計算</h1>
+          {renderTopTable()}
+          {renderBottomTable()}
+        </div>
+      );
+    };
+
+    // 渲染 React 應用
+    try {
+      const root = ReactDOM.createRoot(document.getElementById('root'));
+      root.render(<App />);
+    } catch (e) {
+      console.error('React 渲染失敗:', e);
+      document.getElementById('error').style.display = 'block';
+    }
+  </script>
+</body>
+</html>
