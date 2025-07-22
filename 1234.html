@@ -1,0 +1,139 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>照片上傳</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+  <div class="w-full max-w-md p-6 bg-white rounded-lg shadow-md">
+    <h1 class="text-2xl font-bold text-center mb-6">照片上傳</h1>
+    
+    <!-- 類別選擇 -->
+    <div class="mb-4">
+      <label for="category" class="block text-sm font-medium text-gray-700">選擇類別</label>
+      <select id="category" class="mt-1 block w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="清淤" selected>清淤</option>
+        <option value="交通">交通</option>
+        <option value="溝蓋">溝蓋</option>
+        <option value="道路">道路</option>
+      </select>
+    </div>
+
+    <!-- 照片上傳 -->
+    <div class="mb-4">
+      <label for="photo" class="block text-sm font-medium text-gray-700">上傳照片</label>
+      <input type="file" id="photo" accept="image/*" capture="camera" class="mt-1 block w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+
+    <!-- 預覽區 -->
+    <div id="preview" class="mt-4 hidden">
+      <p class="text-sm font-medium text-gray-700">照片預覽:</p>
+      <img id="previewImage" class="mt-2 w-full h-auto rounded-md" alt="照片預覽">
+    </div>
+
+    <!-- 提交按鈕 -->
+    <button id="submitBtn" class="w-full bg-blue-500 text-white p-2 rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500">提交</button>
+
+    <!-- 提示訊息 -->
+    <p id="message" class="mt-4 text-center text-sm text-gray-600"></p>
+  </div>
+
+  <script>
+    const categorySelect = document.getElementById('category');
+    const photoInput = document.getElementById('photo');
+    const previewDiv = document.getElementById('preview');
+    const previewImage = document.getElementById('previewImage');
+    const submitBtn = document.getElementById('submitBtn');
+    const message = document.getElementById('message');
+
+    // MEGA 檔案請求鏈接
+    const uploadUrls = {
+      '清淤': 'https://mega.nz/filerequest/KxPi8KSDXJw',
+      '交通': 'https://mega.nz/filerequest/n9In5eayUU8',
+      '溝蓋': 'https://mega.nz/filerequest/FcXG9i84-hc',
+      '道路': 'https://mega.nz/filerequest/VAUvmdx_hL8',
+    };
+
+    // 照片預覽
+    photoInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          previewImage.src = e.target.result;
+          previewDiv.classList.remove('hidden');
+        };
+        reader.readAsDataURL(file);
+      } else {
+        previewDiv.classList.add('hidden');
+      }
+    });
+
+    // 提交處理
+    submitBtn.addEventListener('click', async () => {
+      const category = categorySelect.value;
+      const file = photoInput.files[0];
+
+      if (!category) {
+        message.textContent = '請選擇一個類別';
+        return;
+      }
+      if (!file) {
+        message.textContent = '請上傳一張照片';
+        return;
+      }
+
+      const uploadUrl = uploadUrls[category];
+      if (!uploadUrl) {
+        message.textContent = '無效的類別或未配置上傳鏈接';
+        return;
+      }
+
+      // 添加時間戳記到檔案名稱
+      const timestamp = new Date().toISOString().replace(/[-:T]/g, '').split('.')[0];
+      const ext = file.name.split('.').pop();
+      const newFileName = `${file.name.replace(/\.[^/.]+$/, '')}_${timestamp}.${ext}`;
+      const renamedFile = new File([file], newFileName, { type: file.type });
+
+      const formData = new FormData
