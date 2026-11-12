@@ -1,0 +1,436 @@
+<!DOCTYPE html><!-- 20261112132804 -->
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>選舉・公投投票計算 (動態人數版)</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    input[type=number] { -moz-appearance: textfield; font-size: 16px !important; }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .card-shadow { box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  </style>
+</head>
+<body class="bg-slate-50">
+  <div id="root"></div>
+  <script type="text/babel">
+    const zeros = (n) => Array(n).fill(0);
+
+    /* ===== 選舉資料 ===== */
+    const initialData = [
+      { id: '縣市長', G: 1167, F: 294, candidates: [296, 251, 319, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], B: 7 },
+      { id: '鎮長', G: 1147, F: 284, candidates: [373, 39, 426, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], B: 25 },
+      { id: '村里長', G: 9, F: 3, candidates: [0, 2, 0, 2, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], B: 1 },
+      { id: '代表', G: 10, F: 7, candidates: [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0], B: 0 },
+      { id: '議員', G: 1168, F: 295, candidates: [7, 9, 1, 3, 1, 229, 3, 21, 328, 1, 0, 242, 0, 6, 1, 1, 0, 0], B: 20 },
+      { id: '山地原住民類', G: 0, F: 0, candidates: zeros(18), B: 0 },
+      { id: '平地原住民類', G: 0, F: 0, candidates: zeros(18), B: 0 }
+    ];
+
+    /* ===== 公民投票資料 ===== */
+    const initialRefData = [
+      { id: '案1', G: 1167, F: 0, A1: 1100, A2: 67, B: 0 },
+      { id: '案2', G: 1168, F: 200, A1: 0, A2: 0, B: 0 },
+      { id: '案3', G: 1147, F: 300, A1: 0, A2: 0, B: 0 },
+      { id: '案4', G: 10, F: 0, A1: 0, A2: 0, B: 0 },
+      { id: '案5', G: 9, F: 0, A1: 0, A2: 0, B: 0 },
+    ];
+
+    const calculateRefValues = (item) => {
+      const G = Number(item.G) || 0;
+      const F = Number(item.F) || 0;
+      const A1 = Number(item.A1) || 0;
+      const A2 = Number(item.A2) || 0;
+      const B = Number(item.B) || 0;
+
+      const E = G - F;
+      const A = A1 + A2;
+      const C = A + B;
+      const D = G - F - C;
+      const consistency = E === C ? '相符=無已領未投' : `不相符=有已領未投${D < 0 ? '（已領未投票數為負）' : ''}`;
+      return { ...item, E, A, C, D, consistency };
+    };
+
+    const App = () => {
+      const [tab, setTab] = React.useState('election');
+      const [data, setData] = React.useState(initialData);
+      const [refData, setRefData] = React.useState(initialRefData);
+      const [viewMode, setViewMode] = React.useState('input');
+      const [landscape, setLandscape] = React.useState(false);
+      const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });
+
+      React.useEffect(() => {
+        const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight });
+        window.addEventListener('resize', onResize);
+        window.addEventListener('orientationchange', onResize);
+        return () => {
+          window.removeEventListener('resize', onResize);
+          window.removeEventListener('orientationchange', onResize);
+        };
+      }, []);
+
+      const isPortrait = vp.h > vp.w;
+      const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || ('ontouchstart' in window && Math.min(vp.w, vp.h) < 820);
+
+      const handleInputChange = (index, field, value, candidateIndex = null) => {
+        const newValue = value === '' ? '' : Math.max(0, parseInt(value)) || 0;
+        const newData = [...data];
+        if (candidateIndex !== null) {
+          newData[index].candidates[candidateIndex] = newValue;
+        } else {
+          newData[index] = { ...newData[index], [field]: newValue };
+        }
+        setData(newData);
+      };
+
+      const addCandidate = (idx) => {
+        const newData = [...data];
+        newData[idx].candidates.push(0);
+        setData(newData);
+      };
+
+      const handleRefChange = (index, field, value) => {
+        const newValue = value === '' ? 0 : Math.max(0, parseInt(value)) || 0;
+        const newData = [...refData];
+        newData[index] = { ...newData[index], [field]: newValue };
+        setRefData(newData);
+      };
+
+      const calculateValues = (item) => {
+        const G = Number(item.G) || 0;
+        const F = Number(item.F) || 0;
+        const B = Number(item.B) || 0;
+        const A = item.candidates.reduce((sum, c) => sum + (Number(c) || 0), 0);
+        const C = A + B;
+        const E = G - F;
+        const D = E - C;
+        const consistency = E === C ? '相符' : '不相符';
+        return { ...item, A, C, D, E, consistency };
+      };
+
+      /* 清空目前分頁的所有數據（保留項目與候選人欄位數） */
+      const clearAll = () => {
+        const name = tab === 'election' ? '選舉' : '公民投票';
+        if (!window.confirm(`確定要清空「${name}」所有數據嗎？此動作無法復原。`)) return;
+        if (tab === 'election') {
+          setData(data.map(d => ({ ...d, G: 0, F: 0, B: 0, candidates: d.candidates.map(() => 0) })));
+        } else {
+          setRefData(refData.map(d => ({ ...d, G: 0, F: 0, A1: 0, A2: 0, B: 0 })));
+        }
+      };
+
+      /* 橫向展開：優先使用全螢幕 + 鎖定橫向；不支援時（如 iOS）以畫面旋轉替代 */
+      const enterLandscape = async () => {
+        setLandscape(true);
+        try {
+          if (document.documentElement.requestFullscreen && !document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          }
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock('landscape');
+          }
+        } catch (e) { /* 不支援時由 CSS 旋轉處理 */ }
+      };
+
+      const exitLandscape = () => {
+        setLandscape(false);
+        try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+        try { if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen(); } catch (e) {}
+      };
+
+      const toggleView = () => {
+        if (viewMode === 'input') {
+          setViewMode('output');
+        } else {
+          exitLandscape();
+          setViewMode('input');
+        }
+      };
+
+      const switchTab = (t) => {
+        if (landscape) exitLandscape();
+        setTab(t);
+      };
+
+      const calculatedData = data.map(calculateValues);
+      const maxCandidatesCount = Math.max(...data.map(d => d.candidates.length));
+
+      /* 輸出區容器：橫向模式時蓋滿畫面，直向裝置則旋轉 90 度 */
+      const renderOutputArea = (children) => {
+        if (!landscape) return children;
+        const style = isPortrait
+          ? { position: 'fixed', top: 0, left: vp.w, width: vp.h, height: vp.w, transform: 'rotate(90deg)', transformOrigin: 'top left', zIndex: 50 }
+          : { position: 'fixed', top: 0, left: 0, width: vp.w, height: vp.h, zIndex: 50 };
+        return (
+          <div style={style} className="bg-white overflow-auto p-2">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-xs font-bold text-gray-600">橫向檢視</span>
+              <button onClick={exitLandscape} className="px-3 py-1 rounded-lg text-xs font-bold bg-gray-600 text-white shadow-sm">✕ 退出橫向</button>
+            </div>
+            {children}
+          </div>
+        );
+      };
+
+      const renderElectionInput = () => (
+        <div className="max-w-md mx-auto space-y-6">
+          {data.map((item, idx) => {
+            const calc = calculateValues(item);
+            return (
+              <div key={idx} className="bg-white rounded-xl p-4 card-shadow border border-gray-100">
+                <div className="flex justify-between items-center mb-4 border-b pb-2">
+                  <h2 className="text-lg font-black text-blue-700">{item.id}</h2>
+                  <div className="text-right">
+                    <span className={`text-xs px-2 py-1 rounded font-bold ${calc.consistency === '相符' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {calc.consistency} (D={calc.D})
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
+                    <label className="block text-[10px] text-amber-700 font-bold">選舉人數 (G)</label>
+                    <input type="number" inputmode="numeric" value={item.G} onChange={(e) => handleInputChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                  </div>
+                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
+                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
+                    <input type="number" inputmode="numeric" value={item.F} onChange={(e) => handleInputChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                  </div>
+                </div>
+
+                <div className="bg-green-50 rounded-lg p-3 relative">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-bold text-green-700">候選人票數</span>
+                    <button
+                      onClick={() => addCandidate(idx)}
+                      className="bg-green-600 text-white text-[10px] px-2 py-1 rounded-full shadow hover:bg-green-700 active:scale-95"
+                    >
+                      ➕ 新增候選人
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {item.candidates.map((vote, cIdx) => (
+                      <div key={cIdx} className="bg-white border border-green-200 rounded p-1">
+                        <label className="block text-[8px] text-gray-400 text-center">{cIdx+1}</label>
+                        <input type="number" inputmode="numeric" value={vote === 0 ? '' : vote} placeholder="0" onChange={(e) => handleInputChange(idx, 'candidates', e.target.value, cIdx)} className="w-full bg-transparent text-sm text-center font-medium focus:outline-none" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 pt-2 border-t border-green-200 flex items-center justify-between">
+                    <label className="text-xs font-bold text-red-600">無效票 (B)</label>
+                    <input type="number" inputmode="numeric" value={item.B} onChange={(e) => handleInputChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none" />
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+
+      const renderElectionOutput = () => (
+        <div className="bg-white p-2 rounded shadow-inner">
+          <div className="table-container">
+            <table className="table-auto w-full border-collapse border border-gray-400 whitespace-nowrap text-[10px]">
+              <thead>
+                <tr className="bg-gray-100 text-center">
+                  <th className="border border-gray-400 p-2 sticky left-0 bg-gray-100">項目</th>
+                  {Array.from({ length: maxCandidatesCount }).map((_, i) => (
+                    <th key={i} className="border border-gray-400 p-1">#{i + 1}</th>
+                  ))}
+                  <th className="border border-gray-400 p-2 bg-yellow-50">有效 A</th>
+                  <th className="border border-gray-400 p-2 bg-yellow-50">無效 B</th>
+                  <th className="border border-gray-400 p-2 bg-yellow-100 font-bold">投票 C</th>
+                  <th className="border border-gray-400 p-2 font-bold">檢核</th>
+                  <th className="border border-gray-400 p-2 text-red-600">領未投 D</th>
+                  <th className="border border-gray-400 p-2">發出 E</th>
+                  <th className="border border-gray-400 p-2">用餘 F</th>
+                  <th className="border border-gray-400 p-2">選舉 G</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calculatedData.map((item, index) => (
+                  <tr key={index} className="text-center">
+                    <td className="border border-gray-400 p-2 font-bold bg-gray-50 sticky left-0">{item.id}</td>
+                    {Array.from({ length: maxCandidatesCount }).map((_, i) => (
+                      <td key={i} className="border border-gray-400 p-1 bg-white">
+                        {item.candidates[i] !== undefined ? item.candidates[i] : '-'}
+                      </td>
+                    ))}
+                    <td className="border border-gray-400 p-2 bg-yellow-50">{item.A}</td>
+                    <td className="border border-gray-400 p-2 bg-yellow-50">{item.B}</td>
+                    <td className="border border-gray-400 p-2 bg-yellow-100 font-bold">{item.C}</td>
+                    <td className={`border border-gray-400 p-2 font-bold ${item.consistency === '相符' ? 'text-green-600' : 'text-red-600'}`}>{item.consistency}</td>
+                    <td className="border border-gray-400 p-2 font-bold text-red-600">{item.D}</td>
+                    <td className="border border-gray-400 p-2 font-medium">{item.E}</td>
+                    <td className="border border-gray-400 p-2">{item.F}</td>
+                    <td className="border border-gray-400 p-2">{item.G}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-4 text-[10px] text-gray-400">※ 輸出格式已根據最大候選人數自動展開欄位。</p>
+        </div>
+      );
+
+      const renderRefInput = () => (
+        <div className="max-w-md mx-auto space-y-6">
+          {refData.map((item, idx) => {
+            const calc = calculateRefValues(item);
+            const ok = calc.E === calc.C;
+            return (
+              <div key={idx} className="bg-white rounded-xl p-4 card-shadow border border-gray-100">
+                <div className="flex justify-between items-start mb-4 border-b pb-2 gap-2">
+                  <h2 className="text-lg font-black text-blue-700">{item.id}</h2>
+                  <span className={`text-xs px-2 py-1 rounded font-bold text-right ${ok ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {calc.consistency}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
+                    <label className="block text-[10px] text-amber-700 font-bold">投票權人數 (G)</label>
+                    <input type="number" inputmode="numeric" min="0" value={item.G} onChange={(e) => handleRefChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                  </div>
+                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
+                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
+                    <input type="number" inputmode="numeric" min="0" value={item.F} onChange={(e) => handleRefChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                  </div>
+                </div>
+
+                <div className="bg-green-50 rounded-lg p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-white border border-green-200 rounded p-2">
+                      <label className="block text-[10px] text-green-700 font-bold">同意票數 (A1)</label>
+                      <input type="number" inputmode="numeric" min="0" value={item.A1} onChange={(e) => handleRefChange(idx, 'A1', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    </div>
+                    <div className="bg-white border border-green-200 rounded p-2">
+                      <label className="block text-[10px] text-green-700 font-bold">不同意票數 (A2)</label>
+                      <input type="number" inputmode="numeric" min="0" value={item.A2} onChange={(e) => handleRefChange(idx, 'A2', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-green-200 flex items-center justify-between">
+                    <label className="text-xs font-bold text-red-600">無效票 (B)</label>
+                    <input type="number" inputmode="numeric" min="0" value={item.B} onChange={(e) => handleRefChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 mt-3 text-center text-[10px]">
+                  <div className="bg-gray-50 rounded p-1"><div className="text-gray-500">發出 E</div><div className="font-bold text-sm">{calc.E}</div></div>
+                  <div className="bg-gray-50 rounded p-1"><div className="text-gray-500">有效 A</div><div className="font-bold text-sm">{calc.A}</div></div>
+                  <div className="bg-gray-50 rounded p-1"><div className="text-gray-500">投票 C</div><div className="font-bold text-sm">{calc.C}</div></div>
+                  <div className="bg-gray-50 rounded p-1"><div className="text-gray-500">未投 D</div><div className={`font-bold text-sm ${calc.D < 0 ? 'text-red-600' : ''}`}>{calc.D < 0 ? `${calc.D}（異常）` : calc.D}</div></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+
+      const renderRefOutput = () => {
+        const calculatedRef = refData.map(calculateRefValues);
+        return (
+          <div className="bg-white p-2 rounded shadow-inner">
+            <div className="table-container">
+              <table className="table-auto w-full border-collapse border border-gray-400 whitespace-nowrap text-[10px]">
+                <thead>
+                  <tr className="bg-gray-100 text-center">
+                    <th className="border border-gray-400 p-2 sticky left-0 bg-gray-100">編號</th>
+                    <th className="border border-gray-400 p-2">同意票數A1</th>
+                    <th className="border border-gray-400 p-2">不同意A2</th>
+                    <th className="border border-gray-400 p-2">合計A=A1+A2</th>
+                    <th className="border border-gray-400 p-2">無效票B</th>
+                    <th className="border border-gray-400 p-2">投票數C=A+B</th>
+                    <th className="border border-gray-400 p-2">已領未投D</th>
+                    <th className="border border-gray-400 p-2">發出票數E</th>
+                    <th className="border border-gray-400 p-2">用餘票數F</th>
+                    <th className="border border-gray-400 p-2">投票權人數G</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {calculatedRef.map((item, index) => (
+                    <tr key={index} className="text-center">
+                      <td className="border border-gray-400 p-2 font-bold bg-gray-50 sticky left-0">{item.id}</td>
+                      <td className="border border-gray-400 p-2">{item.A1}</td>
+                      <td className="border border-gray-400 p-2">{item.A2}</td>
+                      <td className="border border-gray-400 p-2">{item.A}</td>
+                      <td className="border border-gray-400 p-2">{item.B}</td>
+                      <td className="border border-gray-400 p-2">{item.C}</td>
+                      <td className={`border border-gray-400 p-2 ${item.D < 0 ? 'text-red-600' : ''}`}>{item.D < 0 ? `${item.D}（異常）` : item.D}</td>
+                      <td className="border border-gray-400 p-2">{item.E}</td>
+                      <td className="border border-gray-400 p-2">{item.F}</td>
+                      <td className="border border-gray-400 p-2">{item.G}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="min-h-screen pb-10">
+          {/* Header */}
+          <div className="bg-white shadow-md sticky top-0 z-20 p-3">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <h1 className="text-lg font-bold text-gray-800">{tab === 'election' ? '選舉計算' : '公民投票計算'}</h1>
+              <div className="flex flex-wrap gap-2">
+                {viewMode === 'output' && isMobile && (
+                  <button
+                    onClick={landscape ? exitLandscape : enterLandscape}
+                    className="px-3 py-2 rounded-lg text-sm font-bold shadow-sm bg-indigo-600 text-white"
+                  >
+                    {landscape ? '退出橫向' : '📱 橫向展開'}
+                  </button>
+                )}
+                <button
+                  onClick={clearAll}
+                  className="px-3 py-2 rounded-lg text-sm font-bold shadow-sm bg-red-600 text-white"
+                >
+                  🗑️ 清空數據
+                </button>
+                <button
+                  onClick={toggleView}
+                  className={`px-3 py-2 rounded-lg text-sm font-bold shadow-sm ${viewMode === 'input' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white'}`}
+                >
+                  {viewMode === 'input' ? '轉為輸出格式' : '回到輸入模式'}
+                </button>
+              </div>
+            </div>
+            <div className="flex mt-3 rounded-lg overflow-hidden border border-blue-600">
+              <button
+                onClick={() => switchTab('election')}
+                className={`flex-1 py-2 text-sm font-bold ${tab === 'election' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'}`}
+              >
+                選舉
+              </button>
+              <button
+                onClick={() => switchTab('referendum')}
+                className={`flex-1 py-2 text-sm font-bold ${tab === 'referendum' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'}`}
+              >
+                公民投票
+              </button>
+            </div>
+          </div>
+
+          <div className="p-2 sm:p-4">
+            {viewMode === 'input' ? (
+              tab === 'election' ? renderElectionInput() : renderRefInput()
+            ) : (
+              renderOutputArea(tab === 'election' ? renderElectionOutput() : renderRefOutput())
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
