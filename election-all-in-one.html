@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- 20261112135009 -->
+<!DOCTYPE html><!-- 20261123160800 -->
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -107,6 +107,17 @@
       const addCandidate = (idx) => {
         const newData = [...data];
         newData[idx].candidates.push(0);
+        setData(newData);
+      };
+
+      /* 減少候選人：移除最後一位；至少保留 1 位；若最後一位已有票數則先確認 */
+      const removeCandidate = (idx) => {
+        const cands = data[idx].candidates;
+        if (cands.length <= 1) return;
+        const lastVote = Number(cands[cands.length - 1]) || 0;
+        if (lastVote > 0 && !window.confirm(`「${data[idx].id}」第 ${cands.length} 位候選人已有 ${lastVote} 票，確定要移除嗎？`)) return;
+        const newData = [...data];
+        newData[idx] = { ...newData[idx], candidates: cands.slice(0, -1) };
         setData(newData);
       };
 
@@ -222,12 +233,21 @@
                 <div className="bg-green-50 rounded-lg p-3 relative">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-[10px] font-bold text-green-700">候選人票數</span>
-                    <button
-                      onClick={() => addCandidate(idx)}
-                      className="bg-green-600 text-white text-[10px] px-2 py-1 rounded-full shadow hover:bg-green-700 active:scale-95"
-                    >
-                      ➕ 新增候選人
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => removeCandidate(idx)}
+                        disabled={item.candidates.length <= 1}
+                        className="bg-red-500 text-white text-[10px] px-2 py-1 rounded-full shadow hover:bg-red-600 active:scale-95 disabled:opacity-40"
+                      >
+                        ➖ 減少候選人
+                      </button>
+                      <button
+                        onClick={() => addCandidate(idx)}
+                        className="bg-green-600 text-white text-[10px] px-2 py-1 rounded-full shadow hover:bg-green-700 active:scale-95"
+                      >
+                        ➕ 新增候選人
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {item.candidates.map((vote, cIdx) => (
