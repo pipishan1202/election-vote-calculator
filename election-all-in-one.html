@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- 20261123160800 -->
+<!DOCTYPE html><!-- 20261123162600 -->
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -121,6 +121,14 @@
         setData(newData);
       };
 
+      /* 可修改名稱的選舉類型（依位置）：縣市長、鎮長、村里長、代表、議員、山地原住民類、平地原住民類（全部） */
+      const EDITABLE_NAME_IDX = [0, 1, 2, 3, 4, 5, 6];
+      const handleNameChange = (index, value) => {
+        const newData = [...data];
+        newData[index] = { ...newData[index], id: value };
+        setData(newData);
+      };
+
       const handleRefChange = (index, field, value) => {
         const newValue = value === '' ? 0 : Math.max(0, parseInt(value)) || 0;
         const newData = [...refData];
@@ -211,7 +219,16 @@
             return (
               <div key={idx} className="bg-white rounded-xl p-4 card-shadow border border-gray-100">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
-                  <h2 className="text-lg font-black text-blue-700">{item.id}</h2>
+                  {EDITABLE_NAME_IDX.includes(idx) ? (
+                    <input
+                      type="text"
+                      value={item.id}
+                      onChange={(e) => handleNameChange(idx, e.target.value)}
+                      className="text-lg font-black text-blue-700 bg-transparent border-b border-dashed border-blue-300 w-36 focus:outline-none focus:border-blue-600"
+                    />
+                  ) : (
+                    <h2 className="text-lg font-black text-blue-700">{item.id}</h2>
+                  )}
                   <div className="text-right">
                     <span className={`text-xs px-2 py-1 rounded font-bold ${calc.consistency === '相符' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                       {calc.consistency} (D={calc.D})
