@@ -411,9 +411,12 @@
       );
 
       /* ===== 發出票數計算：發出 = 領到 −（百張疊數 × 100 + 散張） ===== */
-      const issueCalc = (it) => {
+      /* 領到票數 = 選舉／公投分頁的選舉人數 (G)，雙向同步 */
+      const srcOf = (group) => group === 'election' ? data : refData;
+      const receivedOf = (group, i) => { const g = toInt(srcOf(group)[i].G); return g > 0 ? g : ''; };
+      const issueCalc = (it, received) => {
         const remain = toInt(it.stacks) * STACK_SIZE + toInt(it.loose);
-        return { remain, issued: toInt(it.received) - remain, filled: it.received !== '' };
+        return { remain, issued: toInt(received) - remain, filled: received !== '' };
       };
       const issueGroups = [
         { key: 'election', label: '選舉', names: data.map(d => d.id) },
@@ -423,11 +426,17 @@
       const renderIssue = () => {
         const [group, idxStr] = issueSel.split('-');
         const idx = Number(idxStr);
-        const cur = issueData[group][idx];
-        const curName = (group === 'election' ? data : refData)[idx].id;
-        const r = issueCalc(cur);
+        const cur = { ...issueData[group][idx], received: receivedOf(group, idx) };
+        const curName = srcOf(group)[idx].id;
+        const r = issueCalc(cur, cur.received);
         const setField = (f, v) => {
           const val = v === '' ? '' : String(Math.max(0, toInt(v)));
+          if (f === 'received') {
+            const G = val === '' ? 0 : Number(val);
+            if (group === 'election') setData(prev => prev.map((d, i) => i === idx ? { ...d, G } : d));
+            else setRefData(prev => prev.map((d, i) => i === idx ? { ...d, G } : d));
+            return;
+          }
           setIssueData(prev => ({ ...prev, [group]: prev[group].map((x, i) => i === idx ? { ...x, [f]: val } : x) }));
         };
         const fillF = () => {
@@ -463,15 +472,15 @@
                 {issueGroups.map(g => (
                   <optgroup key={g.key} label={g.label}>
                     {g.names.map((n, i) => {
-                      const it = issueData[g.key][i];
-                      return <option key={i} value={`${g.key}-${i}`}>{n}{it.received !== '' ? `（領 ${it.received}）` : ''}</option>;
+                      const rc = receivedOf(g.key, i);
+                      return <option key={i} value={`${g.key}-${i}`}>{n}{rc !== '' ? `（領 ${rc}）` : ''}</option>;
                     })}
                   </optgroup>
                 ))}
               </select>
             </div>
 
-            {numField('received', '領到票數', '張')}
+            {numField('received', `領到票數（＝${group === 'election' ? '選舉人數' : '投票權人數'} G）`, '張')}
             {numField('stacks', '剩餘 百張（幾疊）', '疊')}
             {numField('loose', '剩餘 散張', '張')}
 
@@ -500,12 +509,13 @@
                   {issueGroups.flatMap(g => g.names.map((n, i) => {
                     const key = `${g.key}-${i}`;
                     const it = issueData[g.key][i];
-                    const c = issueCalc(it);
+                    const rc = receivedOf(g.key, i);
+                    const c = issueCalc(it, rc);
                     return (
                       <tr key={key} onClick={() => setIssueSel(key)}
                         className={`border-b last:border-0 cursor-pointer ${key === issueSel ? 'bg-blue-50 font-bold' : ''}`}>
                         <td className="p-1">{n}</td>
-                        <td className="p-1 text-right">{it.received}</td>
+                        <td className="p-1 text-right">{rc}</td>
                         <td className="p-1 text-right">{it.stacks !== '' || it.loose !== '' ? c.remain : ''}</td>
                         <td className={`p-1 text-right font-bold ${c.issued < 0 ? 'text-red-600' : 'text-blue-700'}`}>{c.filled ? c.issued : ''}</td>
                       </tr>
