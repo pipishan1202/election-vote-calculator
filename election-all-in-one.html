@@ -13,6 +13,8 @@
     input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
     .card-shadow { box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
     .table-container { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    input[type=number].big-num { font-size: 26px !important; }
+    select.big-sel { font-size: 18px; }
   </style>
 </head>
 <body class="bg-slate-50">
@@ -41,7 +43,25 @@
     ];
 
     /* ===== 本機記憶（localStorage，僅存在這台裝置的這個瀏覽器） ===== */
-    const STORAGE_KEYS = { election: 'voteCalc_election_v1', referendum: 'voteCalc_referendum_v1' };
+    const STORAGE_KEYS = { election: 'voteCalc_election_v1', referendum: 'voteCalc_referendum_v1', issue: 'voteCalc_issue_v1' };
+
+    /* ===== 發出票數計算資料：每種票各自記住 領到票數、剩餘百張疊數、散張 ===== */
+    const blankIssue = () => ({ received: '', stacks: '', loose: '' });
+    const initialIssue = () => ({
+      election: initialData.map(blankIssue),
+      referendum: initialRefData.map(blankIssue)
+    });
+    const loadIssue = () => {
+      const fb = initialIssue();
+      try {
+        const p = JSON.parse(localStorage.getItem(STORAGE_KEYS.issue));
+        if (p && Array.isArray(p.election) && p.election.length === fb.election.length
+            && Array.isArray(p.referendum) && p.referendum.length === fb.referendum.length) return p;
+      } catch (e) {}
+      return fb;
+    };
+    const STACK_SIZE = 100;
+    const toInt = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
     const loadSaved = (key, fallback, valid) => {
       try {
         const raw = localStorage.getItem(key);
@@ -76,6 +96,9 @@
 
       React.useEffect(() => { saveData(STORAGE_KEYS.election, data); }, [data]);
       React.useEffect(() => { saveData(STORAGE_KEYS.referendum, refData); }, [refData]);
+      const [issueData, setIssueData] = React.useState(loadIssue);
+      const [issueSel, setIssueSel] = React.useState('election-0');
+      React.useEffect(() => { saveData(STORAGE_KEYS.issue, issueData); }, [issueData]);
       const [viewMode, setViewMode] = React.useState('input');
       const [landscape, setLandscape] = React.useState(false);
       const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });
@@ -150,9 +173,11 @@
 
       /* 清空目前分頁的所有數據（保留項目與候選人欄位數） */
       const clearAll = () => {
-        const name = tab === 'election' ? '選舉' : '公民投票';
+        const name = tab === 'election' ? '選舉' : tab === 'referendum' ? '公民投票' : '發出票數';
         if (!window.confirm(`確定要清空「${name}」所有數據嗎？此動作無法復原。`)) return;
-        if (tab === 'election') {
+        if (tab === 'issue') {
+          setIssueData(initialIssue());
+        } else if (tab === 'election') {
           setData(data.map(d => ({ ...d, G: 0, F: 0, B: 0, candidates: d.candidates.map(() => 0) })));
         } else {
           setRefData(refData.map(d => ({ ...d, G: 0, F: 0, A1: 0, A2: 0, B: 0 })));
@@ -385,6 +410,114 @@
         </div>
       );
 
+      /* ===== 發出票數計算：發出 = 領到 −（百張疊數 × 100 + 散張） ===== */
+      const issueCalc = (it) => {
+        const remain = toInt(it.stacks) * STACK_SIZE + toInt(it.loose);
+        return { remain, issued: toInt(it.received) - remain, filled: it.received !== '' };
+      };
+      const issueGroups = [
+        { key: 'election', label: '選舉', names: data.map(d => d.id) },
+        { key: 'referendum', label: '公民投票', names: refData.map(d => d.id) }
+      ];
+
+      const renderIssue = () => {
+        const [group, idxStr] = issueSel.split('-');
+        const idx = Number(idxStr);
+        const cur = issueData[group][idx];
+        const curName = (group === 'election' ? data : refData)[idx].id;
+        const r = issueCalc(cur);
+        const setField = (f, v) => {
+          const val = v === '' ? '' : String(Math.max(0, toInt(v)));
+          setIssueData(prev => ({ ...prev, [group]: prev[group].map((x, i) => i === idx ? { ...x, [f]: val } : x) }));
+        };
+        const fillF = () => {
+          if (!window.confirm(`把剩餘 ${r.remain} 張填入「${curName}」的用餘票數 (F)？`)) return;
+          if (group === 'election') setData(data.map((d, i) => i === idx ? { ...d, F: r.remain } : d));
+          else setRefData(refData.map((d, i) => i === idx ? { ...d, F: r.remain } : d));
+        };
+        const order = ['received', 'stacks', 'loose'];
+        const onEnter = (f) => (e) => {
+          if (e.key !== 'Enter') return;
+          e.preventDefault();
+          const next = document.getElementById('iss-' + order[order.indexOf(f) + 1]);
+          if (next) { next.focus(); next.select(); } else e.target.blur();
+        };
+        const numField = (f, label, unit) => (
+          <div className="bg-white rounded-xl p-3 card-shadow">
+            <label htmlFor={'iss-' + f} className="block text-sm text-gray-600 font-bold mb-1">{label}</label>
+            <div className="flex items-center gap-2">
+              <input id={'iss-' + f} type="number" inputMode="numeric" min="0" enterKeyHint={f === 'loose' ? 'done' : 'next'}
+                value={cur[f]} onChange={(e) => setField(f, e.target.value)} onKeyDown={onEnter(f)}
+                className="big-num flex-1 min-w-0 text-right font-bold border-2 border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:border-blue-600" />
+              <span className="text-gray-500 w-6">{unit}</span>
+            </div>
+          </div>
+        );
+
+        return (
+          <div className="max-w-md mx-auto space-y-3">
+            <div className="bg-white rounded-xl p-3 card-shadow">
+              <label className="block text-sm text-gray-600 font-bold mb-1">選票類型</label>
+              <select value={issueSel} onChange={(e) => setIssueSel(e.target.value)}
+                className="big-sel w-full font-bold text-blue-700 border-2 border-blue-300 rounded-lg px-2 py-2 bg-blue-50 focus:outline-none focus:border-blue-600">
+                {issueGroups.map(g => (
+                  <optgroup key={g.key} label={g.label}>
+                    {g.names.map((n, i) => {
+                      const it = issueData[g.key][i];
+                      return <option key={i} value={`${g.key}-${i}`}>{n}{it.received !== '' ? `（領 ${it.received}）` : ''}</option>;
+                    })}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+
+            {numField('received', '領到票數', '張')}
+            {numField('stacks', '剩餘 百張（幾疊）', '疊')}
+            {numField('loose', '剩餘 散張', '張')}
+
+            <div className="text-center text-sm text-gray-500">
+              剩餘 = {toInt(cur.stacks)} 疊 × {STACK_SIZE} + {toInt(cur.loose)} = {r.remain.toLocaleString()} 張
+            </div>
+            <div className={`rounded-xl p-3 text-center text-white ${r.filled && r.issued < 0 ? 'bg-red-600' : 'bg-blue-600'}`}>
+              <div className="text-sm opacity-90">{curName}　發出票數</div>
+              <div className="text-5xl font-black leading-tight">{r.filled ? r.issued.toLocaleString() : '—'}</div>
+            </div>
+            {r.filled && r.issued < 0 && <div className="text-center text-sm text-red-600 font-bold">⚠ 剩餘比領到的還多，請再確認</div>}
+            {toInt(cur.loose) >= STACK_SIZE && <div className="text-center text-sm text-red-600 font-bold">⚠ 散張已滿 {STACK_SIZE} 張，應該算成一疊</div>}
+
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={() => { setField('stacks', ''); setField('loose', ''); }}
+                className="py-3 rounded-xl font-bold bg-white border-2 border-gray-300 text-gray-700 active:bg-gray-100">清除剩餘</button>
+              <button onClick={fillF} disabled={r.remain === 0}
+                className="py-3 rounded-xl font-bold bg-amber-500 text-white active:bg-amber-600 disabled:opacity-40">填入用餘票數 F</button>
+            </div>
+
+            <div className="bg-white rounded-xl p-2 card-shadow">
+              <div className="text-sm font-bold text-gray-600 px-1 mb-1">各類型一覽（點一下切換）</div>
+              <table className="w-full text-sm">
+                <thead><tr className="text-gray-500 border-b"><th className="text-left p-1">類型</th><th className="text-right p-1">領到</th><th className="text-right p-1">剩餘</th><th className="text-right p-1">發出</th></tr></thead>
+                <tbody>
+                  {issueGroups.flatMap(g => g.names.map((n, i) => {
+                    const key = `${g.key}-${i}`;
+                    const it = issueData[g.key][i];
+                    const c = issueCalc(it);
+                    return (
+                      <tr key={key} onClick={() => setIssueSel(key)}
+                        className={`border-b last:border-0 cursor-pointer ${key === issueSel ? 'bg-blue-50 font-bold' : ''}`}>
+                        <td className="p-1">{n}</td>
+                        <td className="p-1 text-right">{it.received}</td>
+                        <td className="p-1 text-right">{it.stacks !== '' || it.loose !== '' ? c.remain : ''}</td>
+                        <td className={`p-1 text-right font-bold ${c.issued < 0 ? 'text-red-600' : 'text-blue-700'}`}>{c.filled ? c.issued : ''}</td>
+                      </tr>
+                    );
+                  }))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      };
+
       const renderRefOutput = () => {
         const calculatedRef = refData.map(calculateRefValues);
         return (
@@ -432,9 +565,9 @@
           {/* Header */}
           <div className="bg-white shadow-md sticky top-0 z-20 p-3">
             <div className="flex flex-wrap justify-between items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-800">{tab === 'election' ? '選舉計算' : '公民投票計算'}</h1>
+              <h1 className="text-lg font-bold text-gray-800">{tab === 'election' ? '選舉計算' : tab === 'referendum' ? '公民投票計算' : '發出票數計算'}</h1>
               <div className="flex flex-wrap gap-2">
-                {viewMode === 'output' && isMobile && (
+                {tab !== 'issue' && viewMode === 'output' && isMobile && (
                   <button
                     onClick={landscape ? exitLandscape : enterLandscape}
                     className="px-3 py-2 rounded-lg text-sm font-bold shadow-sm bg-indigo-600 text-white"
@@ -448,12 +581,12 @@
                 >
                   🗑️ 清空數據
                 </button>
-                <button
+                {tab !== 'issue' && <button
                   onClick={toggleView}
                   className={`px-3 py-2 rounded-lg text-sm font-bold shadow-sm ${viewMode === 'input' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-white'}`}
                 >
                   {viewMode === 'input' ? '轉為輸出格式' : '回到輸入模式'}
-                </button>
+                </button>}
               </div>
             </div>
             <div className="flex mt-3 rounded-lg overflow-hidden border border-blue-600">
@@ -469,11 +602,17 @@
               >
                 公民投票
               </button>
+              <button
+                onClick={() => switchTab('issue')}
+                className={`flex-1 py-2 text-sm font-bold ${tab === 'issue' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'}`}
+              >
+                發出票數
+              </button>
             </div>
           </div>
 
           <div className="p-2 sm:p-4">
-            {viewMode === 'input' ? (
+            {tab === 'issue' ? renderIssue() : viewMode === 'input' ? (
               tab === 'election' ? renderElectionInput() : renderRefInput()
             ) : (
               renderOutputArea(tab === 'election' ? renderElectionOutput() : renderRefOutput())
@@ -486,5 +625,4 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
-</body>
-</html>
+<script type="mo
