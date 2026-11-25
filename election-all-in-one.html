@@ -56,18 +56,19 @@
       try {
         const p = JSON.parse(localStorage.getItem(STORAGE_KEYS.issue));
         if (p && Array.isArray(p.election) && p.election.length === fb.election.length
-            && Array.isArray(p.referendum) && p.referendum.length === fb.referendum.length) return p;
+            && Array.isArray(p.referendum)) return p;
       } catch (e) {}
       return fb;
     };
     const STACK_SIZE = 100;
     const toInt = (v) => { const n = parseInt(v, 10); return isNaN(n) ? 0 : n; };
-    const loadSaved = (key, fallback, valid) => {
+    const loadSaved = (key, fallback, valid, anyLength = false) => {
       try {
         const raw = localStorage.getItem(key);
         if (!raw) return fallback;
         const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) && parsed.length === fallback.length && parsed.every(valid) ? parsed : fallback;
+        const lenOk = anyLength ? parsed.length >= 1 : parsed.length === fallback.length;
+        return Array.isArray(parsed) && lenOk && parsed.every(valid) ? parsed : fallback;
       } catch (e) { return fallback; }
     };
     const saveData = (key, value) => {
@@ -92,7 +93,7 @@
     const App = () => {
       const [tab, setTab] = React.useState('election');
       const [data, setData] = React.useState(() => loadSaved(STORAGE_KEYS.election, initialData, d => d && Array.isArray(d.candidates)));
-      const [refData, setRefData] = React.useState(() => loadSaved(STORAGE_KEYS.referendum, initialRefData, d => d && 'A1' in d));
+      const [refData, setRefData] = React.useState(() => loadSaved(STORAGE_KEYS.referendum, initialRefData, d => d && 'A1' in d, true));
 
       React.useEffect(() => { saveData(STORAGE_KEYS.election, data); }, [data]);
       React.useEffect(() => { saveData(STORAGE_KEYS.referendum, refData); }, [refData]);
@@ -356,8 +357,31 @@
         </div>
       );
 
+      /* 公投案數增減：新增在最後；減少移除最後一案（至少保留 1 案，有數據先確認） */
+      const addRefCase = () => {
+        setRefData([...refData, { id: `案${refData.length + 1}`, G: 0, F: 0, A1: 0, A2: 0, B: 0 }]);
+      };
+      const removeRefCase = () => {
+        if (refData.length <= 1) return;
+        const last = refData[refData.length - 1];
+        const hasData = ['G', 'F', 'A1', 'A2', 'B'].some(k => Number(last[k]) > 0);
+        if (hasData && !window.confirm(`「${last.id}」已有輸入數據，確定要移除嗎？`)) return;
+        const n = refData.length - 1;
+        setRefData(refData.slice(0, n));
+        setIssueData(prev => ({ ...prev, referendum: prev.referendum.slice(0, n) }));
+      };
+
       const renderRefInput = () => (
         <div className="max-w-md mx-auto space-y-6">
+          <div className="bg-white rounded-xl p-3 card-shadow flex items-center justify-between">
+            <span className="font-bold text-gray-700">公投案數：<span className="text-blue-700 text-lg">{refData.length}</span> 案</span>
+            <div className="flex gap-2">
+              <button onClick={removeRefCase} disabled={refData.length <= 1}
+                className="bg-red-500 text-white text-sm px-3 py-1.5 rounded-full shadow active:scale-95 disabled:opacity-40">➖ 減少</button>
+              <button onClick={addRefCase}
+                className="bg-green-600 text-white text-sm px-3 py-1.5 rounded-full shadow active:scale-95">➕ 新增</button>
+            </div>
+          </div>
           {refData.map((item, idx) => {
             const calc = calculateRefValues(item);
             const ok = calc.E === calc.C;
@@ -424,9 +448,10 @@
       ];
 
       const renderIssue = () => {
-        const [group, idxStr] = issueSel.split('-');
-        const idx = Number(idxStr);
-        const cur = { ...issueData[group][idx], received: receivedOf(group, idx) };
+        let [group, idxStr] = issueSel.split('-');
+        let idx = Number(idxStr);
+        if (idx >= srcOf(group).length) { group = 'election'; idx = 0; }  /* 選到的公投案已被移除 */
+        const cur = { ...(issueData[group][idx] || blankIssue()), received: receivedOf(group, idx) };
         const curName = srcOf(group)[idx].id;
         const r = issueCalc(cur, cur.received);
         const setField = (f, v) => {
@@ -437,7 +462,12 @@
             else setRefData(prev => prev.map((d, i) => i === idx ? { ...d, G } : d));
             return;
           }
-          setIssueData(prev => ({ ...prev, [group]: prev[group].map((x, i) => i === idx ? { ...x, [f]: val } : x) }));
+          setIssueData(prev => {
+            const arr = [...prev[group]];
+            while (arr.length <= idx) arr.push(blankIssue());  /* 新增的公投案補上空白資料 */
+            arr[idx] = { ...arr[idx], [f]: val };
+            return { ...prev, [group]: arr };
+          });
         };
         const fillF = () => {
           if (!window.confirm(`把剩餘 ${r.remain} 張填入「${curName}」的用餘票數 (F)？`)) return;
@@ -467,7 +497,7 @@
           <div className="max-w-md mx-auto space-y-3">
             <div className="bg-white rounded-xl p-3 card-shadow">
               <label className="block text-sm text-gray-600 font-bold mb-1">選票類型</label>
-              <select value={issueSel} onChange={(e) => setIssueSel(e.target.value)}
+              <select value={`${group}-${idx}`}onChange={(e) => setIssueSel(e.target.value)}
                 className="big-sel w-full font-bold text-blue-700 border-2 border-blue-300 rounded-lg px-2 py-2 bg-blue-50 focus:outline-none focus:border-blue-600">
                 {issueGroups.map(g => (
                   <optgroup key={g.key} label={g.label}>
@@ -508,7 +538,7 @@
                 <tbody>
                   {issueGroups.flatMap(g => g.names.map((n, i) => {
                     const key = `${g.key}-${i}`;
-                    const it = issueData[g.key][i];
+                    const it = issueData[g.key][i] || blankIssue();
                     const rc = receivedOf(g.key, i);
                     const c = issueCalc(it, rc);
                     return (
