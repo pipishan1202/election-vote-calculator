@@ -154,7 +154,8 @@
       };
 
       const handleRefChange = (index, field, value) => {
-        const newValue = value === '' ? 0 : Math.max(0, parseInt(value)) || 0;
+        /* 空白時保留空字串，手機才能把 0 刪掉；計算時空白視為 0 */
+        const newValue = value === '' ? '' : Math.max(0, parseInt(value)) || 0;
         const newData = [...refData];
         newData[index] = { ...newData[index], [field]: newValue };
         setRefData(newData);
