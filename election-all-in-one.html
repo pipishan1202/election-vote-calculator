@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- 20261123162600 -->
+<!DOCTYPE html><!-- 20261126131201 -->
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -24,22 +24,22 @@
 
     /* ===== 選舉資料 ===== */
     const initialData = [
-      { id: '縣市長', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '鎮長', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '村里長', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '代表', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '議員', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '山地原住民類', G: 0, F: 0, candidates: zeros(18), B: 0 },
-      { id: '平地原住民類', G: 0, F: 0, candidates: zeros(18), B: 0 }
+      { id: '縣市長', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '鎮長', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '村里長', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '代表', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '議員', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '山地原住民類', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 },
+      { id: '平地原住民類', G: 0, F: 0, FC: false, candidates: zeros(18), B: 0 }
     ];
 
     /* ===== 公民投票資料 ===== */
     const initialRefData = [
-      { id: '案1', G: 0, F: 0, A1: 0, A2: 0, B: 0 },
-      { id: '案2', G: 0, F: 0, A1: 0, A2: 0, B: 0 },
-      { id: '案3', G: 0, F: 0, A1: 0, A2: 0, B: 0 },
-      { id: '案4', G: 0, F: 0, A1: 0, A2: 0, B: 0 },
-      { id: '案5', G: 0, F: 0, A1: 0, A2: 0, B: 0 },
+      { id: '案1', G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 },
+      { id: '案2', G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 },
+      { id: '案3', G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 },
+      { id: '案4', G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 },
+      { id: '案5', G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 },
     ];
 
     /* ===== 本機記憶（localStorage，僅存在這台裝置的這個瀏覽器） ===== */
@@ -73,6 +73,36 @@
     };
     const saveData = (key, value) => {
       try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    };
+
+    /* ===== 輸入流程：① 選舉(投票權)人數 → ② 用餘票數（按「確認餘票」）→ ③ 開票數 ===== */
+    const getFlow = (item, votesSum) => {
+      const G = Number(item.G) || 0;
+      const F = Number(item.F) || 0;
+      const gOk = G > 0;
+      /* 舊資料（尚無 FC 欄位）：已有人數與票數者視為已確認，避免被鎖住 */
+      const fOk = item.FC !== undefined ? !!item.FC : (gOk && (F > 0 || votesSum > 0));
+      const step = !gOk ? 1 : !fOk ? 2 : 3;
+      return { G, F, gOk, fOk, step, fOver: F > G };
+    };
+
+    /* ===== 提醒訊息 ===== */
+    const buildWarnings = (flow, calc, overNames) => {
+      const w = [];
+      if (flow.gOk && flow.fOver) {
+        w.push({ level: 'red', text: `用餘票數 F（${flow.F}）大於人數 G（${flow.G}），請檢查 G、F 是否填錯。` });
+      }
+      if (flow.fOk && !flow.fOver) {
+        if (calc.C > calc.E) {
+          w.push({ level: 'red', text: `開出票數 C（${calc.C}）加用餘票數 F（${flow.F}）已超過人數 G（${flow.G}）。請按「✏️ 修改人數／餘票」調整用餘票數 (F)，並再檢查餘票，之後重新核對票數。` });
+        } else if (calc.C > 0 && calc.D > 0) {
+          w.push({ level: 'amber', text: `尚有已領未投 D＝${calc.D}。若票已全部填完，請確認餘票是否點錯，再檢查有效票、無效票是否漏記。` });
+        }
+        if (overNames.length > 0) {
+          w.push({ level: 'red', text: `${overNames.join('、')}的票數大於發出票數 E（${calc.E}），請檢查是否多打位數。` });
+        }
+      }
+      return w;
     };
 
     const calculateRefValues = (item) => {
@@ -153,6 +183,24 @@
         setData(newData);
       };
 
+      /* 確認餘票（解鎖開票數欄位） / 重新修改人數與餘票（再次鎖住開票數欄位） */
+      const setFlowConfirmed = (kind, idx, confirmed) => {
+        if (kind === 'election') {
+          const nd = [...data];
+          nd[idx] = { ...nd[idx], FC: confirmed };
+          setData(nd);
+        } else {
+          const nd = [...refData];
+          nd[idx] = { ...nd[idx], FC: confirmed };
+          setRefData(nd);
+        }
+      };
+      const confirmFlow = (kind, idx) => setFlowConfirmed(kind, idx, true);
+      const unlockFlow = (kind, idx, votesSum) => {
+        if (votesSum > 0 && !window.confirm('此項目已填入票數。修改人數／餘票後，開票數欄位會暫時鎖住，需重新按「確認餘票」，並請務必重新核對票數。確定要修改嗎？')) return;
+        setFlowConfirmed(kind, idx, false);
+      };
+
       const handleRefChange = (index, field, value) => {
         /* 空白時保留空字串，手機才能把 0 刪掉；計算時空白視為 0 */
         const newValue = value === '' ? '' : Math.max(0, parseInt(value)) || 0;
@@ -180,9 +228,9 @@
         if (tab === 'issue') {
           setIssueData(initialIssue());
         } else if (tab === 'election') {
-          setData(data.map(d => ({ ...d, G: 0, F: 0, B: 0, candidates: d.candidates.map(() => 0) })));
+          setData(data.map(d => ({ ...d, G: 0, F: 0, FC: false, B: 0, candidates: d.candidates.map(() => 0) })));
         } else {
-          setRefData(refData.map(d => ({ ...d, G: 0, F: 0, A1: 0, A2: 0, B: 0 })));
+          setRefData(refData.map(d => ({ ...d, G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 })));
         }
       };
 
@@ -239,10 +287,64 @@
         );
       };
 
+      /* 輸入流程引導：步驟列、確認/修改按鈕、提醒訊息 */
+      const stepCls = (n, step) => n < step ? 'bg-green-100 text-green-700' : n === step ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400';
+      const renderSteps = (flow, gLabel = '選舉人數') => (
+        <div className="mb-3">
+          <div className="flex items-center gap-1 text-[11px] font-bold flex-wrap">
+            <span className={`px-2 py-1 rounded ${stepCls(1, flow.step)}`}>{flow.step > 1 ? '✔ ' : ''}① {gLabel}</span>
+            <span className="text-gray-400">›</span>
+            <span className={`px-2 py-1 rounded ${stepCls(2, flow.step)}`}>{flow.step > 2 ? '✔ ' : ''}② 用餘票數</span>
+            <span className="text-gray-400">›</span>
+            <span className={`px-2 py-1 rounded ${stepCls(3, flow.step)}`}>③ 開票數</span>
+          </div>
+          {flow.step === 1 && <p className="mt-1 text-[11px] text-blue-700">請先填寫「{gLabel} (G)」，才能填用餘票數。</p>}
+          {flow.step === 2 && <p className="mt-1 text-[11px] text-blue-700">請填寫「用餘票數 (F)」（可按「🧮 前往發出票數計算」算出剩餘張數並填入），確認無誤後按「✔ 確認餘票」，才能填開票數。</p>}
+        </div>
+      );
+      const renderFlowButtons = (kind, idx, flow, votesSum) => (
+        <div className="flex flex-wrap gap-2 mb-3">
+          {!flow.fOk ? (
+            <>
+              <button
+                onClick={() => { setIssueSel(`${kind}-${idx}`); switchTab('issue'); }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm"
+              >
+                🧮 前往發出票數計算
+              </button>
+              <button
+                onClick={() => confirmFlow(kind, idx)}
+                disabled={!flow.gOk || flow.fOver}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white shadow-sm disabled:opacity-40"
+              >
+                ✔ 確認餘票
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => unlockFlow(kind, idx, votesSum)}
+              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-500 text-white shadow-sm"
+            >
+              ✏️ 修改人數／餘票
+            </button>
+          )}
+        </div>
+      );
+      const renderWarnings = (list) => list.length === 0 ? null : (
+        <div className="space-y-1 mb-3">
+          {list.map((w, i) => (
+            <div key={i} className={`text-[11px] font-bold rounded p-2 border ${w.level === 'red' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>⚠️ {w.text}</div>
+          ))}
+        </div>
+      );
+
       const renderElectionInput = () => (
         <div className="max-w-md mx-auto space-y-6">
           {data.map((item, idx) => {
             const calc = calculateValues(item);
+            const flow = getFlow(item, calc.C);
+            const overIdx = flow.fOk && !flow.fOver ? item.candidates.map((v, i) => ((Number(v) || 0) > calc.E ? i + 1 : 0)).filter(Boolean) : [];
+            const warns = buildWarnings(flow, calc, overIdx.map(n => `第 ${n} 位候選人`));
             return (
               <div key={idx} className="bg-white rounded-xl p-4 card-shadow border border-gray-100">
                 <div className="flex justify-between items-center mb-4 border-b pb-2">
@@ -263,20 +365,24 @@
                   </div>
                 </div>
 
+                {renderSteps(flow)}
                 <div className="grid grid-cols-2 gap-3 mb-4">
                   <div className="bg-amber-50 p-2 rounded border border-amber-100">
                     <label className="block text-[10px] text-amber-700 font-bold">選舉人數 (G)</label>
-                    <input type="number" inputmode="numeric" value={item.G} onChange={(e) => handleInputChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    <input type="number" inputmode="numeric" value={item.G} disabled={flow.fOk} onChange={(e) => handleInputChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
                   <div className="bg-amber-50 p-2 rounded border border-amber-100">
                     <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
-                    <input type="number" inputmode="numeric" value={item.F} onChange={(e) => handleInputChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    <input type="number" inputmode="numeric" value={item.F} disabled={!flow.gOk || flow.fOk} onChange={(e) => handleInputChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
                 </div>
 
+                {renderFlowButtons('election', idx, flow, calc.C)}
+                {renderWarnings(warns)}
+
                 <div className="bg-green-50 rounded-lg p-3 relative">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-[10px] font-bold text-green-700">候選人票數</span>
+                    <span className="text-[10px] font-bold text-green-700">候選人票數{!flow.fOk && ' 🔒（請先完成步驟 ①②）'}</span>
                     <div className="flex gap-2">
                       <button
                         onClick={() => removeCandidate(idx)}
@@ -295,15 +401,15 @@
                   </div>
                   <div className="grid grid-cols-4 gap-2">
                     {item.candidates.map((vote, cIdx) => (
-                      <div key={cIdx} className="bg-white border border-green-200 rounded p-1">
+                      <div key={cIdx} className={`bg-white border rounded p-1 ${overIdx.includes(cIdx + 1) ? 'border-red-500 bg-red-50' : 'border-green-200'}`}>
                         <label className="block text-[8px] text-gray-400 text-center">{cIdx+1}</label>
-                        <input type="number" inputmode="numeric" value={vote === 0 ? '' : vote} placeholder="0" onChange={(e) => handleInputChange(idx, 'candidates', e.target.value, cIdx)} className="w-full bg-transparent text-sm text-center font-medium focus:outline-none" />
+                        <input type="number" inputmode="numeric" value={vote === 0 ? '' : vote} placeholder="0" disabled={!flow.fOk} onChange={(e) => handleInputChange(idx, 'candidates', e.target.value, cIdx)} className="w-full bg-transparent text-sm text-center font-medium focus:outline-none disabled:opacity-40" />
                       </div>
                     ))}
                   </div>
                   <div className="mt-4 pt-2 border-t border-green-200 flex items-center justify-between">
                     <label className="text-xs font-bold text-red-600">無效票 (B)</label>
-                    <input type="number" inputmode="numeric" value={item.B} onChange={(e) => handleInputChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none" />
+                    <input type="number" inputmode="numeric" value={item.B} disabled={!flow.fOk} onChange={(e) => handleInputChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none disabled:opacity-40" />
                   </div>
                 </div>
               </div>
@@ -360,7 +466,7 @@
 
       /* 公投案數增減：新增在最後；減少移除最後一案（至少保留 1 案，有數據先確認） */
       const addRefCase = () => {
-        setRefData([...refData, { id: `案${refData.length + 1}`, G: 0, F: 0, A1: 0, A2: 0, B: 0 }]);
+        setRefData([...refData, { id: `案${refData.length + 1}`, G: 0, F: 0, FC: false, A1: 0, A2: 0, B: 0 }]);
       };
       const removeRefCase = () => {
         if (refData.length <= 1) return;
@@ -386,6 +492,13 @@
           {refData.map((item, idx) => {
             const calc = calculateRefValues(item);
             const ok = calc.E === calc.C;
+            const flow = getFlow(item, calc.C);
+            const refOver = [];
+            if (flow.fOk && !flow.fOver) {
+              if (calc.A1 > calc.E) refOver.push('同意票數');
+              if (calc.A2 > calc.E) refOver.push('不同意票數');
+            }
+            const warns = buildWarnings(flow, calc, refOver);
             return (
               <div key={idx} className="bg-white rounded-xl p-4 card-shadow border border-gray-100">
                 <div className="flex justify-between items-start mb-4 border-b pb-2 gap-2">
@@ -395,31 +508,36 @@
                   </span>
                 </div>
 
+                {renderSteps(flow, '投票權人數')}
                 <div className="grid grid-cols-2 gap-3 mb-3">
                   <div className="bg-amber-50 p-2 rounded border border-amber-100">
                     <label className="block text-[10px] text-amber-700 font-bold">投票權人數 (G)</label>
-                    <input type="number" inputmode="numeric" min="0" value={item.G} onChange={(e) => handleRefChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    <input type="number" inputmode="numeric" min="0" value={item.G} disabled={flow.fOk} onChange={(e) => handleRefChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
                   <div className="bg-amber-50 p-2 rounded border border-amber-100">
                     <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
-                    <input type="number" inputmode="numeric" min="0" value={item.F} onChange={(e) => handleRefChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                    <input type="number" inputmode="numeric" min="0" value={item.F} disabled={!flow.gOk || flow.fOk} onChange={(e) => handleRefChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
                 </div>
 
+                {renderFlowButtons('referendum', idx, flow, calc.C)}
+                {renderWarnings(warns)}
+
                 <div className="bg-green-50 rounded-lg p-3">
+                  {!flow.fOk && <p className="text-[10px] font-bold text-green-700 mb-2">🔒 請先完成步驟 ①②</p>}
                   <div className="grid grid-cols-2 gap-3">
                     <div className="bg-white border border-green-200 rounded p-2">
                       <label className="block text-[10px] text-green-700 font-bold">同意票數 (A1)</label>
-                      <input type="number" inputmode="numeric" min="0" value={item.A1} onChange={(e) => handleRefChange(idx, 'A1', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                      <input type="number" inputmode="numeric" min="0" value={item.A1} disabled={!flow.fOk} onChange={(e) => handleRefChange(idx, 'A1', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-40" />
                     </div>
                     <div className="bg-white border border-green-200 rounded p-2">
                       <label className="block text-[10px] text-green-700 font-bold">不同意票數 (A2)</label>
-                      <input type="number" inputmode="numeric" min="0" value={item.A2} onChange={(e) => handleRefChange(idx, 'A2', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none" />
+                      <input type="number" inputmode="numeric" min="0" value={item.A2} disabled={!flow.fOk} onChange={(e) => handleRefChange(idx, 'A2', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-40" />
                     </div>
                   </div>
                   <div className="mt-3 pt-2 border-t border-green-200 flex items-center justify-between">
                     <label className="text-xs font-bold text-red-600">無效票 (B)</label>
-                    <input type="number" inputmode="numeric" min="0" value={item.B} onChange={(e) => handleRefChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none" />
+                    <input type="number" inputmode="numeric" min="0" value={item.B} disabled={!flow.fOk} onChange={(e) => handleRefChange(idx, 'B', e.target.value)} className="w-24 bg-red-50 border border-red-200 rounded px-2 py-1 text-center font-bold focus:outline-none disabled:opacity-40" />
                   </div>
                 </div>
 
@@ -666,4 +784,3 @@
     const root = ReactDOM.createRoot(document.getElementById('root'));
     root.render(<App />);
   </script>
-<script type="mo
