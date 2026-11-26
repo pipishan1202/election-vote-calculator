@@ -1,4 +1,4 @@
-<!DOCTYPE html><!-- 20261126131201 -->
+<!DOCTYPE html><!-- 20261126132832 -->
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
@@ -223,7 +223,7 @@
 
       /* 清空目前分頁的所有數據（保留項目與候選人欄位數） */
       const clearAll = () => {
-        const name = tab === 'election' ? '選舉' : tab === 'referendum' ? '公民投票' : '發出票數';
+        const name = tab === 'election' ? '選舉' : tab === 'referendum' ? '公民投票' : '用餘票/發出票計算機';
         if (!window.confirm(`確定要清空「${name}」所有數據嗎？此動作無法復原。`)) return;
         if (tab === 'issue') {
           setIssueData(initialIssue());
@@ -288,6 +288,13 @@
       };
 
       /* 輸入流程引導：步驟列、確認/修改按鈕、提醒訊息 */
+      /* 點「用餘票數 (F)」欄位：跳到「用餘票/發出票計算機」，算出的剩餘張數會自動帶回 F */
+      const goCalc = (kind, idx, flow, gLabel) => {
+        if (!flow.gOk) { window.alert(`請先填寫${gLabel} (G)`); return; }
+        if (flow.fOk) { window.alert('已確認餘票。如需修改，請按「✏️ 修改人數／餘票」。'); return; }
+        setIssueSel(`${kind}-${idx}`);
+        switchTab('issue');
+      };
       const stepCls = (n, step) => n < step ? 'bg-green-100 text-green-700' : n === step ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400';
       const renderSteps = (flow, gLabel = '選舉人數') => (
         <div className="mb-3">
@@ -299,7 +306,7 @@
             <span className={`px-2 py-1 rounded ${stepCls(3, flow.step)}`}>③ 開票數</span>
           </div>
           {flow.step === 1 && <p className="mt-1 text-[11px] text-blue-700">請先填寫「{gLabel} (G)」，才能填用餘票數。</p>}
-          {flow.step === 2 && <p className="mt-1 text-[11px] text-blue-700">請填寫「用餘票數 (F)」（可按「🧮 前往發出票數計算」算出剩餘張數並填入），確認無誤後按「✔ 確認餘票」，才能填開票數。</p>}
+          {flow.step === 2 && <p className="mt-1 text-[11px] text-blue-700">請點「用餘票數 (F)」欄位，到計算機輸入剩餘張數（會自動帶回 F）；回來確認無誤後按「✔ 確認餘票」，才能填開票數。</p>}
         </div>
       );
       const renderFlowButtons = (kind, idx, flow, votesSum) => (
@@ -310,7 +317,7 @@
                 onClick={() => { setIssueSel(`${kind}-${idx}`); switchTab('issue'); }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 text-white shadow-sm"
               >
-                🧮 前往發出票數計算
+                🧮 前往用餘票/發出票計算機
               </button>
               <button
                 onClick={() => confirmFlow(kind, idx)}
@@ -371,9 +378,9 @@
                     <label className="block text-[10px] text-amber-700 font-bold">選舉人數 (G)</label>
                     <input type="number" inputmode="numeric" value={item.G} disabled={flow.fOk} onChange={(e) => handleInputChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
-                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
-                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
-                    <input type="number" inputmode="numeric" value={item.F} disabled={!flow.gOk || flow.fOk} onChange={(e) => handleInputChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
+                  <div className={`bg-amber-50 p-2 rounded border border-amber-100 ${flow.gOk && !flow.fOk ? 'cursor-pointer' : 'opacity-60'}`} onClick={() => goCalc('election', idx, flow, '選舉人數')}>
+                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F){flow.gOk && !flow.fOk && ' 👉 點此計算'}</label>
+                    <input type="number" inputmode="numeric" value={item.F} readOnly className="w-full bg-transparent font-bold text-lg focus:outline-none pointer-events-none" />
                   </div>
                 </div>
 
@@ -514,9 +521,9 @@
                     <label className="block text-[10px] text-amber-700 font-bold">投票權人數 (G)</label>
                     <input type="number" inputmode="numeric" min="0" value={item.G} disabled={flow.fOk} onChange={(e) => handleRefChange(idx, 'G', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
                   </div>
-                  <div className="bg-amber-50 p-2 rounded border border-amber-100">
-                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F)</label>
-                    <input type="number" inputmode="numeric" min="0" value={item.F} disabled={!flow.gOk || flow.fOk} onChange={(e) => handleRefChange(idx, 'F', e.target.value)} className="w-full bg-transparent font-bold text-lg focus:outline-none disabled:opacity-50" />
+                  <div className={`bg-amber-50 p-2 rounded border border-amber-100 ${flow.gOk && !flow.fOk ? 'cursor-pointer' : 'opacity-60'}`} onClick={() => goCalc('referendum', idx, flow, '投票權人數')}>
+                    <label className="block text-[10px] text-amber-700 font-bold">用餘票數 (F){flow.gOk && !flow.fOk && ' 👉 點此計算'}</label>
+                    <input type="number" inputmode="numeric" min="0" value={item.F} readOnly className="w-full bg-transparent font-bold text-lg focus:outline-none pointer-events-none" />
                   </div>
                 </div>
 
@@ -573,7 +580,11 @@
         const cur = { ...(issueData[group][idx] || blankIssue()), received: receivedOf(group, idx) };
         const curName = srcOf(group)[idx].id;
         const r = issueCalc(cur, cur.received);
+        /* 已確認餘票的項目：計算機欄位鎖住，避免繞過輸入頁的鎖定 */
+        const srcItem = srcOf(group)[idx];
+        const locked = getFlow(srcItem, (group === 'election' ? calculateValues(srcItem) : calculateRefValues(srcItem)).C).fOk;
         const setField = (f, v) => {
+          if (locked) return;
           const val = v === '' ? '' : String(Math.max(0, toInt(v)));
           if (f === 'received') {
             const G = val === '' ? 0 : Number(val);
@@ -587,11 +598,24 @@
             arr[idx] = { ...arr[idx], [f]: val };
             return { ...prev, [group]: arr };
           });
+          /* 剩餘張數變動時，自動帶入該項目的用餘票數 (F)，不需再按填入 */
+          const stacks = f === 'stacks' ? val : cur.stacks;
+          const loose = f === 'loose' ? val : cur.loose;
+          setF(toInt(stacks) * STACK_SIZE + toInt(loose));
         };
-        const fillF = () => {
-          if (!window.confirm(`把剩餘 ${r.remain} 張填入「${curName}」的用餘票數 (F)？`)) return;
-          if (group === 'election') setData(data.map((d, i) => i === idx ? { ...d, F: r.remain } : d));
-          else setRefData(refData.map((d, i) => i === idx ? { ...d, F: r.remain } : d));
+        const setF = (F) => {
+          if (group === 'election') setData(prev => prev.map((d, i) => i === idx ? { ...d, F } : d));
+          else setRefData(prev => prev.map((d, i) => i === idx ? { ...d, F } : d));
+        };
+        const clearRemain = () => {
+          if (locked) return;
+          setIssueData(prev => {
+            const arr = [...prev[group]];
+            while (arr.length <= idx) arr.push(blankIssue());
+            arr[idx] = { ...arr[idx], stacks: '', loose: '' };
+            return { ...prev, [group]: arr };
+          });
+          setF(0);
         };
         const order = ['received', 'stacks', 'loose'];
         const onEnter = (f) => (e) => {
@@ -605,8 +629,8 @@
             <label htmlFor={'iss-' + f} className="block text-sm text-gray-600 font-bold mb-1">{label}</label>
             <div className="flex items-center gap-2">
               <input id={'iss-' + f} type="number" inputMode="numeric" min="0" enterKeyHint={f === 'loose' ? 'done' : 'next'}
-                value={cur[f]} onChange={(e) => setField(f, e.target.value)} onKeyDown={onEnter(f)}
-                className="big-num flex-1 min-w-0 text-right font-bold border-2 border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:border-blue-600" />
+                value={cur[f]} disabled={locked} onChange={(e) => setField(f, e.target.value)} onKeyDown={onEnter(f)}
+                className="big-num flex-1 min-w-0 text-right font-bold border-2 border-gray-300 rounded-lg px-3 py-1 focus:outline-none focus:border-blue-600 disabled:opacity-50" />
               <span className="text-gray-500 w-6">{unit}</span>
             </div>
           </div>
@@ -629,31 +653,36 @@
               </select>
             </div>
 
+            {locked && <div className="text-center text-sm text-amber-700 font-bold bg-amber-50 border border-amber-200 rounded-xl p-2">🔒 此項目已確認餘票。請回「{group === 'election' ? '選舉' : '公民投票'}」頁按「✏️ 修改人數／餘票」後才能修改。</div>}
             {numField('received', `領到票數（＝${group === 'election' ? '選舉人數' : '投票權人數'} G）`, '張')}
             {numField('stacks', '剩餘 百張（幾疊）', '疊')}
             {numField('loose', '剩餘 散張', '張')}
 
             <div className="text-center text-sm text-gray-500">
-              剩餘 = {toInt(cur.stacks)} 疊 × {STACK_SIZE} + {toInt(cur.loose)} = {r.remain.toLocaleString()} 張
+              用餘票數 F = {toInt(cur.stacks)} 疊 × {STACK_SIZE} + {toInt(cur.loose)} = {r.remain.toLocaleString()} 張
             </div>
-            <div className={`rounded-xl p-3 text-center text-white ${r.filled && r.issued < 0 ? 'bg-red-600' : 'bg-blue-600'}`}>
-              <div className="text-sm opacity-90">{curName}　發出票數</div>
-              <div className="text-5xl font-black leading-tight">{r.filled ? r.issued.toLocaleString() : '—'}</div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="rounded-xl p-3 text-center text-white bg-amber-500">
+                <div className="text-sm opacity-90">{curName}　用餘票數 F</div>
+                <div className="text-4xl font-black leading-tight">{r.remain.toLocaleString()}</div>
+              </div>
+              <div className={`rounded-xl p-3 text-center text-white ${r.filled && r.issued < 0 ? 'bg-red-600' : 'bg-blue-600'}`}>
+                <div className="text-sm opacity-90">{curName}　發出票數</div>
+                <div className="text-4xl font-black leading-tight">{r.filled ? r.issued.toLocaleString() : '—'}</div>
+              </div>
             </div>
             {r.filled && r.issued < 0 && <div className="text-center text-sm text-red-600 font-bold">⚠ 剩餘比領到的還多，請再確認</div>}
             {toInt(cur.loose) >= STACK_SIZE && <div className="text-center text-sm text-red-600 font-bold">⚠ 散張已滿 {STACK_SIZE} 張，應該算成一疊</div>}
 
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => { setField('stacks', ''); setField('loose', ''); }}
-                className="py-3 rounded-xl font-bold bg-white border-2 border-gray-300 text-gray-700 active:bg-gray-100">清除剩餘</button>
-              <button onClick={fillF} disabled={r.remain === 0}
-                className="py-3 rounded-xl font-bold bg-amber-500 text-white active:bg-amber-600 disabled:opacity-40">填入用餘票數 F</button>
+            <div className="grid grid-cols-1 gap-2">
+              <button onClick={clearRemain} disabled={locked}
+                className="py-3 rounded-xl font-bold bg-white border-2 border-gray-300 text-gray-700 active:bg-gray-100 disabled:opacity-40">清除剩餘</button>
             </div>
 
             <div className="bg-white rounded-xl p-2 card-shadow">
               <div className="text-sm font-bold text-gray-600 px-1 mb-1">各類型一覽（點一下切換）</div>
               <table className="w-full text-sm">
-                <thead><tr className="text-gray-500 border-b"><th className="text-left p-1">類型</th><th className="text-right p-1">領到</th><th className="text-right p-1">剩餘</th><th className="text-right p-1">發出</th></tr></thead>
+                <thead><tr className="text-gray-500 border-b"><th className="text-left p-1">類型</th><th className="text-right p-1">領到</th><th className="text-right p-1">用餘票</th><th className="text-right p-1">發出</th></tr></thead>
                 <tbody>
                   {issueGroups.flatMap(g => g.names.map((n, i) => {
                     const key = `${g.key}-${i}`;
@@ -724,7 +753,7 @@
           {/* Header */}
           <div className="bg-white shadow-md sticky top-0 z-20 p-3">
             <div className="flex flex-wrap justify-between items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-800">{tab === 'election' ? '選舉計算' : tab === 'referendum' ? '公民投票計算' : '發出票數計算'}</h1>
+              <h1 className="text-lg font-bold text-gray-800">{tab === 'election' ? '選舉計算' : tab === 'referendum' ? '公民投票計算' : '用餘票/發出票計算機'}</h1>
               <div className="flex flex-wrap gap-2">
                 {tab !== 'issue' && viewMode === 'output' && isMobile && (
                   <button
@@ -765,7 +794,7 @@
                 onClick={() => switchTab('issue')}
                 className={`flex-1 py-2 text-sm font-bold ${tab === 'issue' ? 'bg-blue-600 text-white' : 'bg-white text-blue-600'}`}
               >
-                發出票數
+                用餘票/發出票
               </button>
             </div>
           </div>
